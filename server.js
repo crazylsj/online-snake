@@ -5,7 +5,9 @@ const crypto = require("crypto");
 const WebSocket = require("ws");
 
 const PORT = Number(process.env.PORT || 3000);
-const TICK_MS = 120;
+const DEFAULT_TICK_MS = 120;
+const MIN_TICK_MS = 120;
+const MAX_TICK_MS = 260;
 const GRID_SIZE = 20;
 const MAX_PLAYERS = 2;
 const FRUIT_TYPES = [
@@ -104,7 +106,7 @@ function handleMessage(socket, message) {
       send(socket, { type: "pong", sentAt: message.sentAt || Date.now() });
       return;
     case "create_room":
-      createRoom(socket, message.name);
+      createRoom(socket, message.name, message.initialSpeedMs);
       return;
     case "join_room":
       joinRoom(socket, message.roomCode, message.name);
@@ -119,10 +121,10 @@ function handleMessage(socket, message) {
       changeDirection(socket, message.direction);
       return;
     case "start_game":
-      startGame(socket);
+      startGame(socket, message.initialSpeedMs);
       return;
     case "restart_game":
-      restartGame(socket);
+      restartGame(socket, message.initialSpeedMs);
       return;
     case "leave_room":
       leaveCurrentRoom(socket);
@@ -132,7 +134,7 @@ function handleMessage(socket, message) {
   }
 }
 
-function createRoom(socket, rawName) {
+function createRoom(socket, rawName, initialSpeedMs) {
   leaveCurrentRoom(socket);
 
   const roomCode = generateRoomCode();
@@ -144,6 +146,7 @@ function createRoom(socket, rawName) {
     winnerId: null,
     fruits: [],
     bombs: [],
+    tickMs: normalizeTickMs(initialSpeedMs),
     chat: [],
     tickTimer: null,
   };
@@ -176,7 +179,7 @@ function joinRoom(socket, rawRoomCode, rawName) {
   broadcastRoom(room);
 }
 
-function startGame(socket) {
+function startGame(socket, requestedTickMs) {
   const room = getSocketRoom(socket);
   if (!room) {
     sendError(socket, "Join a room first.");
@@ -198,12 +201,13 @@ function startGame(socket) {
     return;
   }
 
+  room.tickMs = normalizeTickMs(requestedTickMs ?? room.tickMs);
   addSystemMessage(room, "房主开始了对局。");
   initializeMatch(room);
   broadcastRoom(room);
 }
 
-function restartGame(socket) {
+function restartGame(socket, requestedTickMs) {
   const room = getSocketRoom(socket);
   if (!room) {
     sendError(socket, "Join a room first.");
@@ -215,6 +219,7 @@ function restartGame(socket) {
     return;
   }
 
+  room.tickMs = normalizeTickMs(requestedTickMs ?? room.tickMs);
   initializeMatch(room);
   broadcastRoom(room);
 }
@@ -370,7 +375,7 @@ function initializeMatch(room) {
       : [{ x: 14, y: 10 }, { x: 15, y: 10 }, { x: 16, y: 10 }];
   });
   assignItems(room);
-  room.tickTimer = setInterval(() => stepRoom(room), TICK_MS);
+  room.tickTimer = setInterval(() => stepRoom(room), room.tickMs);
 }
 
 function resetPlayerForWaitingState(player) {
@@ -498,6 +503,7 @@ function broadcastRoom(room) {
     hostId: room.hostId,
     matchState: room.matchState,
     winnerId: room.winnerId,
+    tickMs: room.tickMs,
     fruits: room.fruits,
     bombs: room.bombs,
     chat: room.chat,
@@ -656,6 +662,16 @@ function directionFromName(name) {
   };
 
   return mapping[String(name || "").toLowerCase()] || null;
+}
+
+function normalizeTickMs(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_TICK_MS;
+  }
+
+  const rounded = Math.round(numeric / 10) * 10;
+  return Math.min(MAX_TICK_MS, Math.max(MIN_TICK_MS, rounded));
 }
 
 createServer();

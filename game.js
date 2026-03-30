@@ -9,6 +9,8 @@ const startButton = document.getElementById("start-button");
 const pauseButton = document.getElementById("pause-button");
 const restartButton = document.getElementById("restart-button");
 const audioButton = document.getElementById("audio-button");
+const speedRangeInput = document.getElementById("speed-range");
+const speedRangeValueEl = document.getElementById("speed-range-value");
 const createRoomButton = document.getElementById("create-room-button");
 const joinRoomButton = document.getElementById("join-room-button");
 const copyRoomButton = document.getElementById("copy-room-button");
@@ -31,10 +33,11 @@ const touchButtons = document.querySelectorAll("[data-direction]");
 
 const gridSize = 20;
 const tileSize = canvas.width / gridSize;
-const baseDelay = 190;
-const onlineTickDelay = 120;
+const defaultTickDelay = 190;
+const defaultOnlineTickDelay = 120;
 const storageKey = "snake-high-score";
 const nicknameStorageKey = "snake-online-nickname";
+const speedStorageKey = "snake-initial-speed";
 const fruitTypes = [
   { kind: "apple", label: "苹果", score: 10, color: "#ff5f5f" },
   { kind: "pear", label: "青梨", score: 18, color: "#8dc63f" },
@@ -106,6 +109,7 @@ let animationFrameId = 0;
 let soloState = createSoloState();
 let onlineState = createInitialOnlineState();
 let lastAudioSnapshot = { status: "idle", myScore: 0 };
+let selectedInitialSpeed = loadInitialSpeed();
 
 nicknameInput.value = localStorage.getItem(nicknameStorageKey) || "";
 applyInviteCodeFromUrl();
@@ -118,7 +122,7 @@ function createSoloState() {
     fruits: [],
     bombs: [],
     score: 0,
-    tickDelay: baseDelay,
+    tickDelay: selectedInitialSpeed,
     gameLoop: null,
     isRunning: false,
     isPaused: false,
@@ -137,6 +141,7 @@ function createInitialOnlineState() {
     bombs: [],
     status: "idle",
     winnerId: null,
+    tickMs: defaultOnlineTickDelay,
     chat: [],
     previousSnakes: [],
     stateUpdatedAt: performance.now(),
@@ -145,6 +150,30 @@ function createInitialOnlineState() {
 
 function cloneSegment(segment) {
   return { x: segment.x, y: segment.y };
+}
+
+function loadInitialSpeed() {
+  const stored = Number(localStorage.getItem(speedStorageKey) || defaultTickDelay);
+  if (!Number.isFinite(stored)) {
+    return defaultTickDelay;
+  }
+  return Math.min(260, Math.max(120, Math.round(stored / 10) * 10));
+}
+
+function updateSpeedControlValue() {
+  speedRangeInput.value = String(selectedInitialSpeed);
+  speedRangeValueEl.textContent = `${selectedInitialSpeed} ms`;
+}
+
+function setInitialSpeed(nextValue) {
+  selectedInitialSpeed = Math.min(260, Math.max(120, Math.round(Number(nextValue) / 10) * 10));
+  localStorage.setItem(speedStorageKey, String(selectedInitialSpeed));
+  updateSpeedControlValue();
+
+  if (mode === "solo" && !soloState.isRunning) {
+    soloState.tickDelay = selectedInitialSpeed;
+    updateHud();
+  }
 }
 
 function positionKey(segment) {
@@ -580,7 +609,10 @@ function interpolateSegment(previousSegment, currentSegment, progress) {
 }
 
 function getInterpolatedOnlineSnakes() {
-  const progress = Math.min(1, Math.max(0, (performance.now() - onlineState.stateUpdatedAt) / onlineTickDelay));
+  const progress = Math.min(
+    1,
+    Math.max(0, (performance.now() - onlineState.stateUpdatedAt) / (onlineState.tickMs || defaultOnlineTickDelay))
+  );
 
   return onlineState.snakes.map((snake) => {
     const previousSnake = onlineState.previousSnakes.find((entry) => entry.id === snake.id);
@@ -659,7 +691,7 @@ function startSoloGame() {
         setStatus("只有房主可以开始对局。");
         return;
       }
-      sendMessage({ type: "start_game" });
+      sendMessage({ type: "start_game", initialSpeedMs: selectedInitialSpeed });
     }
     return;
   }
@@ -870,7 +902,7 @@ function leaveOnlineRoom(notifyServer = true) {
 
 function createRoom() {
   enterOnlineMode();
-  sendMessage({ type: "create_room", name: getNickname() });
+  sendMessage({ type: "create_room", name: getNickname(), initialSpeedMs: selectedInitialSpeed });
 }
 
 function joinRoom() {
@@ -889,7 +921,7 @@ function requestRestart() {
       setStatus("当前没有联机房间。");
       return;
     }
-    sendMessage({ type: "restart_game" });
+    sendMessage({ type: "restart_game", initialSpeedMs: selectedInitialSpeed });
     setStatus("已请求重新开始。");
     return;
   }
@@ -1081,6 +1113,7 @@ function handleStateMessage(state) {
   onlineState.bombs = Array.isArray(state.bombs) ? state.bombs : [];
   onlineState.status = state.matchState || "waiting";
   onlineState.winnerId = state.winnerId || null;
+  onlineState.tickMs = Number(state.tickMs) || defaultOnlineTickDelay;
   onlineState.chat = state.chat || [];
   onlineState.stateUpdatedAt = performance.now();
 
@@ -1150,7 +1183,7 @@ function updateHud() {
   if (mode === "online") {
     scoreEl.textContent = String(getMyOnlineScore());
     highScoreEl.textContent = String(highScore);
-    speedEl.textContent = `${(baseDelay / onlineTickDelay).toFixed(1)}x`;
+    speedEl.textContent = `${(defaultTickDelay / onlineState.tickMs).toFixed(1)}x`;
     pauseButton.disabled = true;
     pauseButton.textContent = "暂停";
     copyRoomButton.disabled = !onlineState.roomCode;
@@ -1158,6 +1191,7 @@ function updateHud() {
     chatInput.disabled = !onlineState.roomCode;
     chatSendButton.disabled = !onlineState.roomCode;
     modeLabel.textContent = "联机";
+    speedRangeInput.disabled = Boolean(onlineState.roomCode) && !isHost();
     startButton.disabled = !onlineState.roomCode || !isHost() || onlineState.status === "running" || !canStartOnlineGame();
     startButton.textContent = onlineState.roomCode ? "房主开始" : "单机开始";
 
@@ -1170,7 +1204,7 @@ function updateHud() {
 
   scoreEl.textContent = String(soloState.score);
   highScoreEl.textContent = String(highScore);
-  speedEl.textContent = `${(baseDelay / soloState.tickDelay).toFixed(1)}x`;
+  speedEl.textContent = `${(defaultTickDelay / soloState.tickDelay).toFixed(1)}x`;
   pauseButton.disabled = !soloState.isRunning;
   pauseButton.textContent = soloState.isPaused ? "继续" : "暂停";
   copyRoomButton.disabled = true;
@@ -1181,6 +1215,7 @@ function updateHud() {
   startButton.textContent = "单机开始";
   restartButton.textContent = "重新开始";
   modeLabel.textContent = "单机";
+  speedRangeInput.disabled = false;
   updateRoomStateBadge();
   updatePlayersPanel();
 }
@@ -1263,6 +1298,9 @@ audioButton.addEventListener("click", () => {
   scheduleMusic();
   playStartSound();
 });
+speedRangeInput.addEventListener("input", (event) => {
+  setInitialSpeed(event.target.value);
+});
 
 createRoomButton.addEventListener("click", createRoom);
 joinRoomButton.addEventListener("click", joinRoom);
@@ -1278,6 +1316,7 @@ touchButtons.forEach((button) => {
 });
 
 updateAudioButton();
+updateSpeedControlValue();
 highScoreEl.textContent = String(highScore);
 renderChat([]);
 resetSoloGame();
