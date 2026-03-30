@@ -106,10 +106,10 @@ let socket = null;
 let lastRenderedChatId = "";
 let animationFrameId = 0;
 
+let selectedInitialSpeed = loadInitialSpeed();
 let soloState = createSoloState();
 let onlineState = createInitialOnlineState();
 let lastAudioSnapshot = { status: "idle", myScore: 0 };
-let selectedInitialSpeed = loadInitialSpeed();
 
 nicknameInput.value = localStorage.getItem(nicknameStorageKey) || "";
 applyInviteCodeFromUrl();
