@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const WebSocket = require("ws");
 
 const PORT = Number(process.env.PORT || 3000);
-const TICK_MS = 100;
+const TICK_MS = 120;
 const GRID_SIZE = 20;
 const MAX_PLAYERS = 2;
 const FRUIT_TYPES = [

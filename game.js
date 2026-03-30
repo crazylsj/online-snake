@@ -31,8 +31,8 @@ const touchButtons = document.querySelectorAll("[data-direction]");
 
 const gridSize = 20;
 const tileSize = canvas.width / gridSize;
-const baseDelay = 160;
-const onlineTickDelay = 100;
+const baseDelay = 190;
+const onlineTickDelay = 120;
 const storageKey = "snake-high-score";
 const nicknameStorageKey = "snake-online-nickname";
 const fruitTypes = [
@@ -344,41 +344,139 @@ function drawBackground() {
 }
 
 function drawFruit(fruit) {
-  const padding = tileSize * 0.18;
-  const size = tileSize - padding * 2;
-  const x = fruit.x * tileSize + padding;
-  const y = fruit.y * tileSize + padding;
+  const centerX = fruit.x * tileSize + tileSize / 2;
+  const centerY = fruit.y * tileSize + tileSize / 2;
 
-  ctx.fillStyle = fruit.color;
-  ctx.fillRect(x, y, size, size);
-  ctx.strokeStyle = "#16181d";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, size, size);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
 
-  ctx.fillStyle = "#16181d";
-  ctx.font = "bold 10px 'Segoe UI', 'Microsoft YaHei', sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(fruit.score), x + size / 2, y + size / 2 + 0.5);
+  if (fruit.kind === "apple") {
+    ctx.fillStyle = "#d83a34";
+    ctx.beginPath();
+    ctx.arc(centerX - tileSize * 0.11, centerY + 1, tileSize * 0.22, 0, Math.PI * 2);
+    ctx.arc(centerX + tileSize * 0.11, centerY + 1, tileSize * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#8f1d19";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    ctx.strokeStyle = "#5b3a1f";
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - tileSize * 0.24);
+    ctx.quadraticCurveTo(centerX + 1, centerY - tileSize * 0.35, centerX + tileSize * 0.07, centerY - tileSize * 0.4);
+    ctx.stroke();
+
+    ctx.fillStyle = "#43a047";
+    ctx.beginPath();
+    ctx.ellipse(centerX + tileSize * 0.18, centerY - tileSize * 0.26, tileSize * 0.12, tileSize * 0.07, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (fruit.kind === "pear") {
+    ctx.fillStyle = "#8bc34a";
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY + tileSize * 0.08, tileSize * 0.24, tileSize * 0.28, 0, 0, Math.PI * 2);
+    ctx.ellipse(centerX, centerY - tileSize * 0.15, tileSize * 0.16, tileSize * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#507d22";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    ctx.strokeStyle = "#5b3a1f";
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - tileSize * 0.32);
+    ctx.quadraticCurveTo(centerX + tileSize * 0.02, centerY - tileSize * 0.42, centerX + tileSize * 0.08, centerY - tileSize * 0.46);
+    ctx.stroke();
+
+    ctx.fillStyle = "#4caf50";
+    ctx.beginPath();
+    ctx.ellipse(centerX - tileSize * 0.12, centerY - tileSize * 0.24, tileSize * 0.11, tileSize * 0.06, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const berryOffsets = [
+      [-0.16, 0.04],
+      [0, -0.04],
+      [0.16, 0.04],
+      [-0.08, 0.2],
+      [0.08, 0.2],
+    ];
+
+    ctx.fillStyle = "#5a3ec8";
+    berryOffsets.forEach(([offsetX, offsetY]) => {
+      ctx.beginPath();
+      ctx.arc(centerX + tileSize * offsetX, centerY + tileSize * offsetY, tileSize * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#362284";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    ctx.strokeStyle = "#2e7d32";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - tileSize * 0.18);
+    ctx.lineTo(centerX, centerY - tileSize * 0.33);
+    ctx.stroke();
+
+    ctx.fillStyle = "#43a047";
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - tileSize * 0.24);
+    ctx.lineTo(centerX - tileSize * 0.08, centerY - tileSize * 0.3);
+    ctx.lineTo(centerX - tileSize * 0.02, centerY - tileSize * 0.18);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - tileSize * 0.24);
+    ctx.lineTo(centerX + tileSize * 0.08, centerY - tileSize * 0.3);
+    ctx.lineTo(centerX + tileSize * 0.02, centerY - tileSize * 0.18);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(centerX - tileSize * 0.1, centerY - tileSize * 0.08, tileSize * 0.04, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawBomb(bomb) {
-  const padding = tileSize * 0.15;
-  const size = tileSize - padding * 2;
-  const x = bomb.x * tileSize + padding;
-  const y = bomb.y * tileSize + padding;
+  const centerX = bomb.x * tileSize + tileSize / 2;
+  const centerY = bomb.y * tileSize + tileSize / 2;
+  const radius = tileSize * 0.26;
 
-  ctx.fillStyle = "#111111";
-  ctx.fillRect(x, y, size, size);
-  ctx.strokeStyle = "#ffcf33";
+  ctx.save();
+  ctx.fillStyle = "#1c1f24";
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#090b0f";
   ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, size, size);
+  ctx.stroke();
 
-  ctx.fillStyle = "#ffcf33";
-  ctx.font = "bold 14px 'Segoe UI Symbol', sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("!", x + size / 2, y + size / 2 + 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(centerX - radius * 0.34, centerY - radius * 0.34, radius * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#6b7280";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(centerX + radius * 0.2, centerY - radius * 0.74);
+  ctx.quadraticCurveTo(centerX + radius * 0.5, centerY - radius * 1.15, centerX + radius * 0.72, centerY - radius * 0.92);
+  ctx.stroke();
+
+  ctx.fillStyle = "#f59e0b";
+  ctx.beginPath();
+  ctx.moveTo(centerX + radius * 0.7, centerY - radius * 0.98);
+  ctx.lineTo(centerX + radius * 0.9, centerY - radius * 1.22);
+  ctx.lineTo(centerX + radius * 1.02, centerY - radius * 0.92);
+  ctx.lineTo(centerX + radius * 1.14, centerY - radius * 1.22);
+  ctx.lineTo(centerX + radius * 1.2, centerY - radius * 0.9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawBodySegment(segment, index, totalLength, theme) {
