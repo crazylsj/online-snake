@@ -32,7 +32,7 @@ const touchButtons = document.querySelectorAll("[data-direction]");
 const gridSize = 20;
 const tileSize = canvas.width / gridSize;
 const baseDelay = 160;
-const onlineTickDelay = 140;
+const onlineTickDelay = 100;
 const storageKey = "snake-high-score";
 const nicknameStorageKey = "snake-online-nickname";
 
@@ -96,6 +96,7 @@ let musicStep = 0;
 let mode = "solo";
 let socket = null;
 let lastRenderedChatId = "";
+let animationFrameId = 0;
 
 let soloState = createSoloState();
 let onlineState = createInitialOnlineState();
@@ -130,6 +131,8 @@ function createInitialOnlineState() {
     status: "idle",
     winnerId: null,
     chat: [],
+    previousSnakes: [],
+    stateUpdatedAt: performance.now(),
   };
 }
 
@@ -418,7 +421,7 @@ function drawSnakeEntity(entity) {
 
 function getRenderState() {
   if (mode === "online") {
-    return { food: onlineState.food, snakes: onlineState.snakes };
+    return { food: onlineState.food, snakes: getInterpolatedOnlineSnakes() };
   }
   return {
     food: soloState.food,
@@ -426,11 +429,55 @@ function getRenderState() {
   };
 }
 
+function interpolateValue(start, end, progress) {
+  return start + (end - start) * progress;
+}
+
+function interpolateSegment(previousSegment, currentSegment, progress) {
+  if (!previousSegment || !currentSegment) {
+    return currentSegment ? cloneSegment(currentSegment) : null;
+  }
+
+  return {
+    x: interpolateValue(previousSegment.x, currentSegment.x, progress),
+    y: interpolateValue(previousSegment.y, currentSegment.y, progress),
+  };
+}
+
+function getInterpolatedOnlineSnakes() {
+  const progress = Math.min(1, Math.max(0, (performance.now() - onlineState.stateUpdatedAt) / onlineTickDelay));
+
+  return onlineState.snakes.map((snake) => {
+    const previousSnake = onlineState.previousSnakes.find((entry) => entry.id === snake.id);
+    if (!previousSnake || previousSnake.snake.length !== snake.snake.length) {
+      return snake;
+    }
+
+    return {
+      ...snake,
+      snake: snake.snake.map((segment, index) => interpolateSegment(previousSnake.snake[index], segment, progress)),
+    };
+  });
+}
+
 function draw() {
   const renderState = getRenderState();
   drawBackground();
   drawFood(renderState.food);
   renderState.snakes.forEach(drawSnakeEntity);
+}
+
+function startRenderLoop() {
+  if (animationFrameId) {
+    return;
+  }
+
+  const renderFrame = () => {
+    draw();
+    animationFrameId = window.requestAnimationFrame(renderFrame);
+  };
+
+  animationFrameId = window.requestAnimationFrame(renderFrame);
 }
 
 function maybeUpdateHighScore(score) {
@@ -870,6 +917,13 @@ function renderChat(chat) {
 }
 
 function handleStateMessage(state) {
+  const nextSnakes = (state.players || []).filter(Boolean).map((player, index) => ({
+    id: player.id,
+    direction: player.direction,
+    snake: (player.snake || []).map(cloneSegment),
+    theme: index === 0 ? snakeThemes.player1 : snakeThemes.player2,
+  }));
+
   onlineState.roomCode = state.roomCode;
   onlineState.myPlayerId = state.yourPlayerId || onlineState.myPlayerId;
   onlineState.hostId = state.hostId || null;
@@ -880,16 +934,16 @@ function handleStateMessage(state) {
     ready: Boolean(player.ready),
     alive: player.alive,
   }));
-  onlineState.snakes = (state.players || []).filter(Boolean).map((player, index) => ({
-    id: player.id,
-    direction: player.direction,
-    snake: (player.snake || []).map(cloneSegment),
-    theme: index === 0 ? snakeThemes.player1 : snakeThemes.player2,
+  onlineState.previousSnakes = onlineState.snakes.map((snake) => ({
+    ...snake,
+    snake: snake.snake.map(cloneSegment),
   }));
+  onlineState.snakes = nextSnakes;
   onlineState.food = state.food || { x: 0, y: 0 };
   onlineState.status = state.matchState || "waiting";
   onlineState.winnerId = state.winnerId || null;
   onlineState.chat = state.chat || [];
+  onlineState.stateUpdatedAt = performance.now();
 
   roomCodeDisplay.textContent = onlineState.roomCode || "未加入";
   roomCodeInput.value = onlineState.roomCode || roomCodeInput.value;
@@ -901,7 +955,6 @@ function handleStateMessage(state) {
   updatePlayersPanel();
   renderChat(onlineState.chat);
   updateHud();
-  draw();
 }
 
 function handleServerMessage(rawMessage) {
@@ -1089,3 +1142,4 @@ updateAudioButton();
 highScoreEl.textContent = String(highScore);
 renderChat([]);
 resetSoloGame();
+startRenderLoop();
