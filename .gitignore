@@ -1,0 +1,3 @@
+node_modules/
+.railway/
+npm-debug.log*
