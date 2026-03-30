@@ -8,6 +8,11 @@ const PORT = Number(process.env.PORT || 3000);
 const TICK_MS = 100;
 const GRID_SIZE = 20;
 const MAX_PLAYERS = 2;
+const FRUIT_TYPES = [
+  { kind: "apple", label: "Apple", score: 10, color: "#ff5f5f" },
+  { kind: "pear", label: "Pear", score: 18, color: "#8dc63f" },
+  { kind: "berry", label: "Berry", score: 26, color: "#6d5dfc" },
+];
 
 const staticFiles = {
   "/": "index.html",
@@ -137,7 +142,8 @@ function createRoom(socket, rawName) {
     hostId: null,
     matchState: "waiting",
     winnerId: null,
-    food: { x: 10, y: 10 },
+    fruits: [],
+    bombs: [],
     chat: [],
     tickTimer: null,
   };
@@ -321,7 +327,7 @@ function leaveCurrentRoom(socket) {
   room.matchState = "waiting";
   room.winnerId = null;
   remainingPlayers.forEach(resetPlayerForWaitingState);
-  room.food = randomFoodPosition(room.players);
+  assignItems(room);
   broadcastRoom(room);
 }
 
@@ -363,7 +369,7 @@ function initializeMatch(room) {
       ? [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }]
       : [{ x: 14, y: 10 }, { x: 15, y: 10 }, { x: 16, y: 10 }];
   });
-  room.food = randomFoodPosition(room.players);
+  assignItems(room);
   room.tickTimer = setInterval(() => stepRoom(room), TICK_MS);
 }
 
@@ -417,6 +423,12 @@ function stepRoom(room) {
       return;
     }
 
+    const hitBomb = room.bombs.some((bomb) => bomb.x === head.x && bomb.y === head.y);
+    if (hitBomb) {
+      deadPlayers.add(player.id);
+      return;
+    }
+
     const hitBody = activePlayers.some((otherPlayer) => {
       const body = otherPlayer.id === player.id ? otherPlayer.snake.slice(0, -1) : otherPlayer.snake;
       return body.some((segment) => segment.x === head.x && segment.y === head.y);
@@ -448,9 +460,10 @@ function stepRoom(room) {
     const nextHead = nextHeads.get(player.id);
     player.snake.unshift(nextHead);
 
-    if (nextHead.x === room.food.x && nextHead.y === room.food.y) {
-      player.score += 10;
-      room.food = randomFoodPosition(room.players);
+    const eatenFruit = room.fruits.find((fruit) => fruit.x === nextHead.x && fruit.y === nextHead.y);
+    if (eatenFruit) {
+      player.score += eatenFruit.score;
+      assignItems(room);
     } else {
       player.snake.pop();
     }
@@ -485,7 +498,8 @@ function broadcastRoom(room) {
     hostId: room.hostId,
     matchState: room.matchState,
     winnerId: room.winnerId,
-    food: room.food,
+    fruits: room.fruits,
+    bombs: room.bombs,
     chat: room.chat,
     players: room.players.map((player) => {
       if (!player) {
@@ -572,21 +586,65 @@ function generateRoomCode() {
   return code;
 }
 
-function randomFoodPosition(players) {
+function assignItems(room) {
+  const occupied = new Set();
+
+  room.players
+    .filter(Boolean)
+    .forEach((player) => {
+      player.snake.forEach((segment) => {
+        occupied.add(positionKey(segment));
+      });
+    });
+
+  const fruitCount = randomInt(1, 2);
+  const bombCount = randomInt(1, 2);
+  const shuffledTypes = shuffle(FRUIT_TYPES).slice(0, fruitCount);
+
+  room.fruits = shuffledTypes.map((fruitType) => ({
+    kind: fruitType.kind,
+    label: fruitType.label,
+    score: fruitType.score,
+    color: fruitType.color,
+    ...randomEmptyPosition(occupied),
+  }));
+
+  room.bombs = Array.from({ length: bombCount }, () => ({
+    ...randomEmptyPosition(occupied),
+  }));
+}
+
+function randomEmptyPosition(occupied) {
   let position = { x: 0, y: 0 };
+  let key = "";
 
   do {
     position = {
       x: Math.floor(Math.random() * GRID_SIZE),
       y: Math.floor(Math.random() * GRID_SIZE),
     };
-  } while (
-    players
-      .filter(Boolean)
-      .some((player) => player.snake.some((segment) => segment.x === position.x && segment.y === position.y))
-  );
+    key = positionKey(position);
+  } while (occupied.has(key));
 
+  occupied.add(key);
   return position;
+}
+
+function positionKey(position) {
+  return `${position.x},${position.y}`;
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffle(items) {
+  const cloned = items.slice();
+  for (let index = cloned.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [cloned[index], cloned[swapIndex]] = [cloned[swapIndex], cloned[index]];
+  }
+  return cloned;
 }
 
 function directionFromName(name) {

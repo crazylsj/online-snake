@@ -35,6 +35,11 @@ const baseDelay = 160;
 const onlineTickDelay = 100;
 const storageKey = "snake-high-score";
 const nicknameStorageKey = "snake-online-nickname";
+const fruitTypes = [
+  { kind: "apple", label: "苹果", score: 10, color: "#ff5f5f" },
+  { kind: "pear", label: "青梨", score: 18, color: "#8dc63f" },
+  { kind: "berry", label: "莓果", score: 26, color: "#6d5dfc" },
+];
 
 const directionMap = {
   ArrowUp: { x: 0, y: -1, name: "up" },
@@ -110,7 +115,8 @@ function createSoloState() {
     snake: soloStartSnake.map(cloneSegment),
     direction: directionMap.ArrowRight,
     nextDirection: directionMap.ArrowRight,
-    food: { x: 0, y: 0 },
+    fruits: [],
+    bombs: [],
     score: 0,
     tickDelay: baseDelay,
     gameLoop: null,
@@ -127,7 +133,8 @@ function createInitialOnlineState() {
     hostId: null,
     players: [],
     snakes: [],
-    food: { x: 0, y: 0 },
+    fruits: [],
+    bombs: [],
     status: "idle",
     winnerId: null,
     chat: [],
@@ -138,6 +145,56 @@ function createInitialOnlineState() {
 
 function cloneSegment(segment) {
   return { x: segment.x, y: segment.y };
+}
+
+function positionKey(segment) {
+  return `${segment.x},${segment.y}`;
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffle(items) {
+  const cloned = items.slice();
+  for (let index = cloned.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [cloned[index], cloned[swapIndex]] = [cloned[swapIndex], cloned[index]];
+  }
+  return cloned;
+}
+
+function randomEmptyPosition(occupied) {
+  let position = { x: 0, y: 0 };
+  let key = "";
+
+  do {
+    position = {
+      x: Math.floor(Math.random() * gridSize),
+      y: Math.floor(Math.random() * gridSize),
+    };
+    key = positionKey(position);
+  } while (occupied.has(key));
+
+  occupied.add(key);
+  return position;
+}
+
+function generateItems(excludedSegments) {
+  const occupied = new Set(excludedSegments.map(positionKey));
+  const fruitCount = randomInt(1, 2);
+  const bombCount = randomInt(1, 2);
+  const fruits = shuffle(fruitTypes)
+    .slice(0, fruitCount)
+    .map((fruitType) => ({
+      kind: fruitType.kind,
+      label: fruitType.label,
+      score: fruitType.score,
+      color: fruitType.color,
+      ...randomEmptyPosition(occupied),
+    }));
+  const bombs = Array.from({ length: bombCount }, () => randomEmptyPosition(occupied));
+  return { fruits, bombs };
 }
 
 function applyInviteCodeFromUrl() {
@@ -260,17 +317,6 @@ function updateAudioButton() {
   audioButton.textContent = audioEnabled ? "音乐: 开" : "音乐: 关";
 }
 
-function randomFoodPosition(excludedSegments) {
-  let position;
-  do {
-    position = {
-      x: Math.floor(Math.random() * gridSize),
-      y: Math.floor(Math.random() * gridSize),
-    };
-  } while (excludedSegments.some((segment) => segment.x === position.x && segment.y === position.y));
-  return position;
-}
-
 function getCellCenter(segment) {
   return {
     x: segment.x * tileSize + tileSize / 2,
@@ -279,13 +325,10 @@ function getCellCenter(segment) {
 }
 
 function drawBackground() {
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, "#f8f1e5");
-  gradient.addColorStop(1, "#dfebdd");
-  ctx.fillStyle = gradient;
+  ctx.fillStyle = "#f3f5f7";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.strokeStyle = "rgba(28, 58, 39, 0.06)";
+  ctx.strokeStyle = "#d5dbe3";
   ctx.lineWidth = 1;
   for (let offset = tileSize; offset < canvas.width; offset += tileSize) {
     ctx.beginPath();
@@ -300,56 +343,54 @@ function drawBackground() {
   }
 }
 
-function drawFood(food) {
-  const centerX = food.x * tileSize + tileSize / 2;
-  const centerY = food.y * tileSize + tileSize / 2 + 1;
-  const appleRadius = tileSize * 0.34;
+function drawFruit(fruit) {
+  const padding = tileSize * 0.18;
+  const size = tileSize - padding * 2;
+  const x = fruit.x * tileSize + padding;
+  const y = fruit.y * tileSize + padding;
 
-  ctx.save();
-  ctx.shadowColor = "rgba(114, 31, 24, 0.22)";
-  ctx.shadowBlur = 8;
-  ctx.fillStyle = "#c84639";
-  ctx.beginPath();
-  ctx.arc(centerX - 3, centerY, appleRadius, 0, Math.PI * 2);
-  ctx.arc(centerX + 3, centerY, appleRadius, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = fruit.color;
+  ctx.fillRect(x, y, size, size);
+  ctx.strokeStyle = "#16181d";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, size, size);
 
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = "#74452a";
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  ctx.moveTo(centerX, centerY - appleRadius - 2);
-  ctx.quadraticCurveTo(centerX + 1, centerY - appleRadius - 10, centerX + 4, centerY - appleRadius - 12);
-  ctx.stroke();
+  ctx.fillStyle = "#16181d";
+  ctx.font = "bold 10px 'Segoe UI', 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(fruit.score), x + size / 2, y + size / 2 + 0.5);
+}
 
-  ctx.fillStyle = "#4d9956";
-  ctx.beginPath();
-  ctx.ellipse(centerX + 7, centerY - appleRadius - 5, 5, 3, -0.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+function drawBomb(bomb) {
+  const padding = tileSize * 0.15;
+  const size = tileSize - padding * 2;
+  const x = bomb.x * tileSize + padding;
+  const y = bomb.y * tileSize + padding;
+
+  ctx.fillStyle = "#111111";
+  ctx.fillRect(x, y, size, size);
+  ctx.strokeStyle = "#ffcf33";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, size, size);
+
+  ctx.fillStyle = "#ffcf33";
+  ctx.font = "bold 14px 'Segoe UI Symbol', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("!", x + size / 2, y + size / 2 + 1);
 }
 
 function drawBodySegment(segment, index, totalLength, theme) {
   const center = getCellCenter(segment);
   const progress = index / Math.max(1, totalLength - 1);
-  const radius = tileSize * (0.36 - progress * 0.08);
-  const gradient = ctx.createRadialGradient(
-    center.x - radius * 0.4,
-    center.y - radius * 0.5,
-    radius * 0.2,
-    center.x,
-    center.y,
-    radius * 1.1
-  );
+  const size = tileSize * (0.7 - progress * 0.12);
 
-  gradient.addColorStop(0, theme.bodyStart);
-  gradient.addColorStop(0.58, theme.bodyMid);
-  gradient.addColorStop(1, theme.bodyEnd);
-
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = progress > 0.7 ? theme.bodyEnd : progress > 0.35 ? theme.bodyMid : theme.bodyStart;
+  ctx.fillRect(center.x - size / 2, center.y - size / 2, size, size);
+  ctx.strokeStyle = "#16181d";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(center.x - size / 2, center.y - size / 2, size, size);
 }
 
 function drawHead(snake, direction, theme) {
@@ -366,20 +407,15 @@ function drawHead(snake, direction, theme) {
   ctx.translate(center.x, center.y);
   ctx.rotate(angle);
 
-  const headGradient = ctx.createRadialGradient(-4, -5, 2, 0, 0, headRadius * 1.15);
-  headGradient.addColorStop(0, theme.headStart);
-  headGradient.addColorStop(0.5, theme.headMid);
-  headGradient.addColorStop(1, theme.headEnd);
-  ctx.fillStyle = headGradient;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, headRadius * 1.18, headRadius * 0.86, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = theme.headMid;
+  ctx.fillRect(-headRadius, -headRadius * 0.78, headRadius * 2, headRadius * 1.56);
+  ctx.strokeStyle = "#16181d";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-headRadius, -headRadius * 0.78, headRadius * 2, headRadius * 1.56);
 
   ctx.fillStyle = "#141814";
-  ctx.beginPath();
-  ctx.arc(headRadius * 0.45, -headRadius * 0.34, 2.3, 0, Math.PI * 2);
-  ctx.arc(headRadius * 0.45, headRadius * 0.34, 2.3, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillRect(headRadius * 0.28, -headRadius * 0.42, 3.2, 3.2);
+  ctx.fillRect(headRadius * 0.28, headRadius * 0.22, 3.2, 3.2);
   ctx.restore();
 }
 
@@ -421,10 +457,11 @@ function drawSnakeEntity(entity) {
 
 function getRenderState() {
   if (mode === "online") {
-    return { food: onlineState.food, snakes: getInterpolatedOnlineSnakes() };
+    return { fruits: onlineState.fruits, bombs: onlineState.bombs, snakes: getInterpolatedOnlineSnakes() };
   }
   return {
-    food: soloState.food,
+    fruits: soloState.fruits,
+    bombs: soloState.bombs,
     snakes: [{ snake: soloState.snake, direction: soloState.direction, theme: snakeThemes.solo }],
   };
 }
@@ -463,7 +500,8 @@ function getInterpolatedOnlineSnakes() {
 function draw() {
   const renderState = getRenderState();
   drawBackground();
-  drawFood(renderState.food);
+  renderState.bombs.forEach(drawBomb);
+  renderState.fruits.forEach(drawFruit);
   renderState.snakes.forEach(drawSnakeEntity);
 }
 
@@ -495,7 +533,7 @@ function restartSoloLoop() {
 function resetSoloGame() {
   clearInterval(soloState.gameLoop);
   soloState = createSoloState();
-  soloState.food = randomFoodPosition(soloState.snake);
+  Object.assign(soloState, generateItems(soloState.snake));
   stopMusic();
   musicStep = 0;
   lastAudioSnapshot = { status: "idle", myScore: 0 };
@@ -604,8 +642,9 @@ function stepSolo() {
 
   const hitWall = head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize;
   const hitSelf = soloState.snake.some((segment) => segment.x === head.x && segment.y === head.y);
+  const hitBomb = soloState.bombs.some((bomb) => bomb.x === head.x && bomb.y === head.y);
 
-  if (hitWall || hitSelf) {
+  if (hitWall || hitSelf || hitBomb) {
     draw();
     endSoloGame();
     return;
@@ -613,15 +652,16 @@ function stepSolo() {
 
   soloState.snake.unshift(head);
 
-  if (head.x === soloState.food.x && head.y === soloState.food.y) {
-    soloState.score += 10;
+  const eatenFruit = soloState.fruits.find((fruit) => fruit.x === head.x && fruit.y === head.y);
+  if (eatenFruit) {
+    soloState.score += eatenFruit.score;
     soloState.tickDelay = Math.max(70, soloState.tickDelay - 6);
     maybeUpdateHighScore(soloState.score);
-    soloState.food = randomFoodPosition(soloState.snake);
+    Object.assign(soloState, generateItems(soloState.snake));
     restartSoloLoop();
     scheduleMusic();
     playEatSound();
-    setStatus("吃到食物，速度提升。");
+    setStatus(`吃到${eatenFruit.label}，获得 ${eatenFruit.score} 分。`);
   } else {
     soloState.snake.pop();
   }
@@ -939,7 +979,8 @@ function handleStateMessage(state) {
     snake: snake.snake.map(cloneSegment),
   }));
   onlineState.snakes = nextSnakes;
-  onlineState.food = state.food || { x: 0, y: 0 };
+  onlineState.fruits = Array.isArray(state.fruits) ? state.fruits : [];
+  onlineState.bombs = Array.isArray(state.bombs) ? state.bombs : [];
   onlineState.status = state.matchState || "waiting";
   onlineState.winnerId = state.winnerId || null;
   onlineState.chat = state.chat || [];
